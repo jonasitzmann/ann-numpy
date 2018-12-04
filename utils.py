@@ -39,8 +39,8 @@ def get_edge_filters():
 
 def conv2d(mat, kernel, reverse=False, full=False):
     assert len(mat.shape) == len(kernel.shape) == 2, 'invalid dimensions in conv2d : {} and {}'.format(mat.shape, kernel.shape)
-    kernelOrdered = kernel if reversed else kernel[::-1, ::-1] 
-    mode = 'full' if full else 'same'
+    kernelOrdered = kernel if not reversed else kernel[::-1, ::-1] 
+    mode = 'full' if full else 'valid'
     return convolve2d(mat, kernelOrdered, mode)
 
 def conv3d(mat, kernel, reverse=False, full=False):

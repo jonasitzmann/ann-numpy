@@ -69,10 +69,11 @@ class Conv2D(Layer):
     def init(self, in_dim):
         assert len(in_dim) == 3, 'input is not 3D'
         self.in_dim = in_dim.copy()
-        self.out_dim  = (self.n_filters, *np.array(self.in_dim[1:]))
+        filter_out_dim = self.in_dim[1:] - self.filter_size + 1
+        self.out_dim  = (self.n_filters, *filter_out_dim)
         filter_shape = (self.in_dim[0], self.filter_size, self.filter_size)
         self.filters = np.random.uniform(-1, 1, (self.n_filters, *filter_shape))
-        self.d_w = np.zeros(self.filters.size)
+        self.d_w = np.zeros(self.filters.shape)
         return self.out_dim
 
     def activate(self, a_in):
@@ -83,8 +84,14 @@ class Conv2D(Layer):
     def backpropagate(self, d_in):
         deltas = self.d_a_func(self.z_out) * d_in
         self.d_w += self.learning_rate * utils.conv3d(self.a_in, deltas)
-        return np.sum([utils.conv2d(f, deltas, True, True) for f in
-            self.filters])
+        return np.array([np.sum([utils.conv2d(f[i], deltas[f_idx], True, True)
+            for f_idx, f in enumerate(self.filters)], axis=0) for i in
+            range(self.in_dim[0])])
+
+    def update(self):
+        self.filters += self.d_w
+        self.d_w = np.zeros(self.d_w.shape)
+
 
 class MaxPooling(Layer):
     def __init__(self, pool_size=5):
