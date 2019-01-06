@@ -73,25 +73,34 @@ class Conv2D(Layer):
         self.out_dim  = (self.n_filters, *filter_out_dim)
         filter_shape = (self.in_dim[0], self.filter_size, self.filter_size)
         self.filters = np.random.uniform(-1, 1, (self.n_filters, *filter_shape))
+        self.bias = 0.
+        self.d_bias = 0.
         self.d_w = np.zeros(self.filters.shape)
         return self.out_dim
 
     def activate(self, a_in):
         self.a_in = a_in
-        self.z_out = [utils.conv3d(a_in, f) for f in self.filters]
+        self.z_out = np.array([utils.conv3d(a_in, f) for f in self.filters])
+        self.z_out = self.z_out + self.bias
         return self.a_func(self.z_out)
 
-    def backpropagate(self, d_in):
+    def backpropagate(self, d_in): # works only for one channel and one filter
         deltas = self.d_a_func(self.z_out) * d_in
-        self.d_w += self.learning_rate * utils.conv3d(self.a_in, deltas)
-        return np.array([np.sum([utils.conv2d(f[i], deltas[f_idx], True, True)
-            for f_idx, f in enumerate(self.filters)], axis=0) for i in
-            range(self.in_dim[0])])
+        self.d_bias += self.learning_rate * (self.d_a_func(self.z_out) *
+                d_in).sum()
+        self.d_w += np.array([[self.learning_rate * utils.conv2d(a_in_i,
+            delta) for a_in_i in self.a_in] for delta in deltas])
+        #return np.array([np.sum([utils.conv2d(f[i], deltas[f_idx])
+        #    for f_idx, f in enumerate(self.filters)], axis=0) for i in
+        #    range(self.in_dim[0])])
+        d_out_0 = utils.conv2d(deltas[0], d_in[0], 0, 1)
+        return np.array([d_out_0])
 
     def update(self):
         self.filters += self.d_w
         self.d_w = np.zeros(self.d_w.shape)
-
+        self.bias += self.d_bias
+        self.d_bias = 0
 
 class MaxPooling(Layer):
     def __init__(self, pool_size=5):
@@ -108,8 +117,8 @@ class MaxPooling(Layer):
     
     def activate2D(self, mat_in):
         x = [[np.max(mat_in[row:row+self.pool_size, col:col+self.pool_size])
-            for row in range(0, mat_in.shape[0], self.pool_size)]
-            for col in range(0, mat_in.shape[1], self.pool_size)
+            for col in range(0, mat_in.shape[1], self.pool_size)]
+            for row in range(0, mat_in.shape[0], self.pool_size)
             ]
         return np.array(x)
 
@@ -173,7 +182,7 @@ class Model:
             if(printouts):
                 print('epoch: \t', i, 'loss', self.loss(xs, ys))
             for idx, (x, y), in enumerate(zip(xs, ys)):
-                d_a = y - np.clip(self.pred(x), 0, 1)
+                d_a = y - np.clip(self.pred(x), -1, 1)
                 for layer in reversed(self.layers):
                     d_a = layer.backpropagate(d_a)
                 if idx % self.batch_size == 0 or idx == len(ys)-1:
@@ -181,8 +190,11 @@ class Model:
                         layer.update()
 
     def loss(self, xs, ys):
-        squared_errors =[(self.pred(x) - y)**2 for x, y in zip(xs, ys)]
-        return sum(sum(squared_errors)) / len(squared_errors)
+        labels_flat = ys.flatten()
+        pred_flat = self.pred_vec(xs).flatten()
+        squared_errors =[(label - pred)**2 for label, pred in zip(labels_flat,
+            pred_flat)]
+        return sum(squared_errors) / len(squared_errors)
     
     def save(self, filename):
         with open(filename, 'wb') as file:

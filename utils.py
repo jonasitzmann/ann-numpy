@@ -17,8 +17,7 @@ def shuffle_in_unison(a, b):
     np.random.set_state(rng_state)
     np.random.shuffle(b)
 
-def get_mnist_samples(n):
-    n_classes = 10
+def get_mnist_samples(n, n_classes = 10):
     n = int(n/n_classes)
     img_paths = ['mnist/trainingSet/{}/'.format(i) for i in range(n_classes)]
     xs = np.concatenate([[
@@ -26,24 +25,23 @@ def get_mnist_samples(n):
         ] for class_path in img_paths])
     ys = np.concatenate([np.ones(n)*i for i in range(n_classes)])
     ys = np.array([[int(i==y) for i in range(n_classes)] for y in ys])
-    shuffle_in_unison(xs, ys)
+    #shuffle_in_unison(xs, ys)
     return xs, ys
 
 def get_edge_filters():
     return np.array([
         [[[ 1, 1], [-1,-1]]],
         [[[ 1,-1], [ 1,-1]]],
-        [[[ 1,-1], [-1, 1]]],
         [[[-1, 1], [ 1,-1]]],
-        ])
+        ], dtype = np.float64)
 
-def conv2d(mat, kernel, reverse=False, full=False):
+def conv2d(mat, kernel, reverse=True, full=False):
     assert len(mat.shape) == len(kernel.shape) == 2, 'invalid dimensions in conv2d : {} and {}'.format(mat.shape, kernel.shape)
-    kernelOrdered = kernel if not reversed else kernel[::-1, ::-1] 
+    kernelOrdered = kernel if not reverse else kernel[::-1, ::-1] 
     mode = 'full' if full else 'valid'
     return convolve2d(mat, kernelOrdered, mode)
 
-def conv3d(mat, kernel, reverse=False, full=False):
+def conv3d(mat, kernel):
     return np.sum([conv2d(mat[i], channel) for i, channel in enumerate(kernel)], 0)
 
 bound = 1000
@@ -159,14 +157,16 @@ def load(filename):
     with open(filename, 'rb') as file:
         return pickle.load(file)
 
-def get_samples_from_func(func, n_samples, n_variables, max_val = 2):
+def get_samples_from_func(func, n_samples, n_variables, val_range = (-2, 2)):
     v_func = np.vectorize(func)
-    xs = (np.random.rand(n_samples, n_variables) - 0.5)*2*max_val
+    xs = np.random.rand(n_samples, n_variables) * val_range[1]-val_range[0]
+    xs += val_range[0]
     ys = v_func(*zip(*xs))
     return xs, ys
 
 def split_data(xs, ys, test_proportion):
-    split_idx = len(xs) * test_proportion
+    shuffle_in_unison(xs, ys)
+    split_idx = int(len(xs) * test_proportion)
     x_test = xs[:split_idx]
     y_test = ys[:split_idx]
     x_train = xs[split_idx:]
@@ -174,7 +174,9 @@ def split_data(xs, ys, test_proportion):
     return x_train, y_train, x_test, y_test
 
 def calc_accuracy(pred, ground_truth):
-    pred = pred > 0.5
+    pred = pred.flatten()
+    ground_truth = ground_truth.flatten()
+    pred = pred  > 0.5
     results = [p == gt for p, gt in zip(pred, ground_truth)]
     return sum(results) / float(len(pred))
 
@@ -199,12 +201,30 @@ def get_churn_example():
     x, y = load_churn_data()
     return m, x, y
 
-def get_current_example(n_samples):
-    xs, ys = get_samples_from_func(
-            lambda x, y: int(((abs(x) < 8) and abs(y+4) < 2)*2-1 or 
-               ((abs(x) < 8) and abs(y-4) < 2) ),
-            n_samples, 2, 12)
-    m = ann.Model()
-    m.add_layer(2, 10, 'leaky_relu')
-    m.add_layer(10, 1,)
+def get_mnist_example():
+    x, y = get_mnist_samples(1000, 2)
+    x = x / 50.
+    y = np.array([y_[1] for y_ in y])
+    m = ann.Model(x[0].shape)
+    filters = get_edge_filters()
+    m.add(ann.Conv2D(n_filters=len(filters), filter_size=len(filters[0,0,0]),
+        a_func='relu'))
+    m.layers[-1].filters = filters
+    m.add(ann.Flatten())
+    m.add(ann.Dense(10, a_func='sigmoid'))
+    m.add(ann.Dense(1, a_func='sigmoid'))
+    return m, x, y
+
+def get_minimal_conv_example():
+    func = lambda x: x > 1
+    xs, ys = get_samples_from_func(func, 100, 1, (0, 2))
+    xs = np.array([[[x]] for x in xs])
+    m = ann.Model(xs[0].shape)
+    m.add(ann.Conv2D(n_filters=1, filter_size=1))
+    m.add(ann.Flatten(a_func='identity'))
     return m, xs, ys
+
+def calc_mnist_acc(preds, labels):
+    correct = [np.argmax(preds[i]) == np.argmax(labels[i]) for i in
+            range(len(labels))]
+    return sum(correct) / (0.+len(correct))
