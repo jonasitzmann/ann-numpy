@@ -45,30 +45,30 @@ def conv3d(mat, kernel):
     return np.sum([conv2d(mat[i], channel) for i, channel in enumerate(kernel)], 0)
 
 bound = 1000
-def bounded(func):
+def clipped(func):
     def wrapper(*args):
         return np.clip(func(*args), -bound, bound)
     return wrapper
 
 
 # activation functions and its derivatives
-@bounded
+@clipped
 def relu(x):
     return max(0, x)
 
-@bounded
+@clipped
 def d_relu(x):
     return 1 if x > 0 else 0
 
-@bounded
+@clipped
 def leaky_relu(x):
     return x if x > 0 else 0.01*x
 
-@bounded
+@clipped
 def d_leaky_relu(x):
     return 1. if x>0 else 0.01
 
-@bounded
+@clipped
 def leaky_bounded_relu(x):
     if x < 0:
         return 0.01*x
@@ -77,28 +77,28 @@ def leaky_bounded_relu(x):
     else:
         return 1+0.01*(x-1)
 
-@bounded
+@clipped
 def d_leaky_bounded_relu(x):
     return 1 if 0 < x < 1 else 0.01
 
-@bounded
+@clipped
 def sigmoid(x):
     return 1/(1+np.exp(-x))
 
-@bounded
+@clipped
 def d_sigmoid(x):
     exp_neg_x = np.exp(-x)
     return (exp_neg_x)/(exp_neg_x + 1)**2
 
-@bounded
+@clipped
 def tanh(x):
     return 2*sigmoid(2*x)-1
 
-@bounded
+@clipped
 def d_tanh(x):
     return 1 - tanh(x)**2
 
-@bounded
+@clipped
 def softmax_vec(xs):
     ys = np.array([np.exp(x) for x in xs])
     ys = ys / sum(ys)
